@@ -27,21 +27,20 @@ namespace enc = sensor_msgs::image_encodings;
 ros::Publisher pointCloudPub;
 ros::Subscriber imageSub;
 ros::Subscriber cameraInfoSub;
-image_geometry::PinholeCameraModel model_;
-bool cameraIndoValid = false;
-sensor_msgs::CameraInfo cameraInfo;
+image_geometry::PinholeCameraModel cameraModel;
+
 
 template<typename T>
 void convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud_msg)
 {
 	// Use correct principal point from calibration
-	float center_x = model_.cx();
-	float center_y = model_.cy();
+	float center_x = cameraModel.cx();
+	float center_y = cameraModel.cy();
 
 	// Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
 	double unit_scaling = DepthTraits<T>::toMeters( T(1) );
-	float constant_x = unit_scaling / model_.fx();
-	float constant_y = unit_scaling / model_.fy();
+	float constant_x = unit_scaling / cameraModel.fx();
+	float constant_y = unit_scaling / cameraModel.fy();
 	float bad_point = std::numeric_limits<float>::quiet_NaN();
 
 	sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud_msg, "x");
@@ -70,8 +69,7 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud
 	}
 }
 
-void depthCb(const sensor_msgs::ImageConstPtr& depth_msg, 
-	const sensor_msgs::CameraInfoConstPtr& info_msg)
+void depthCb(const sensor_msgs::ImageConstPtr& depth_msg)
 {
 	//Convert to opencv
 	cv_bridge::CvImagePtr cv_ptr;
@@ -98,9 +96,6 @@ void depthCb(const sensor_msgs::ImageConstPtr& depth_msg,
 	sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud_msg);
 	pcd_modifier.setPointCloud2FieldsByString(1, "xyz");
 
-	// Update camera model
-	model_.fromCameraInfo(info_msg);
-
 	if (depth_msg->encoding == enc::TYPE_16UC1)
 	{
 		convert<uint16_t>(depth_msg, cloud_msg);
@@ -122,18 +117,12 @@ void depthCb(const sensor_msgs::ImageConstPtr& depth_msg,
 void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg) 
 {
 	std::cout << "imageCallback" <<std::endl;
-	if (cameraIndoValid) 
-	{
-		sensor_msgs::CameraInfoConstPtr ci(&cameraInfo);
-		depthCb(depth_msg,ci);
-	}
+	depthCb(depth_msg);
 }
 
 void cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr& infoMsg) 
 {
-	std::cout << "cameraInfoCallback" <<std::endl;
-	cameraInfo = *infoMsg;
-	cameraIndoValid = true;
+	cameraModel.fromCameraInfo(infoMsg);
 }
 
 /**
@@ -180,8 +169,8 @@ int main(int argc, char **argv)
 	// camera_info_pub = n.advertise<sensor_msgs::CameraInfo>("camera_info", 1);
 	// image_pub = n.advertise<sensor_msgs::Image>("image_rect", 1);
 	pointCloudPub = nh.advertise<PointCloud>("/points", 1);
-	imageSub      = nh.subscribe<sensor_msgs::Image>("/camera/depth/image_raw", 1, imageCallback);
-	cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo>("/camera/depth/camera_info", 1, cameraInfoCallback);
+	imageSub      = nh.subscribe<sensor_msgs::Image>("camera/depth/image_raw", 1, imageCallback);
+	cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo>("camera/depth/camera_info", 1, cameraInfoCallback);
 
 	// ros::Subscriber camera_info_sub = n.subscribe("camera/depth/camera_info", 1, cameraCallback)
 ; // ros::Subscriber image_sub = n.subscribe("camera/depth/image", 1, imageCallback);
