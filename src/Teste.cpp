@@ -23,10 +23,16 @@ typedef sensor_msgs::PointCloud2 PointCloud;
 
 namespace enc = sensor_msgs::image_encodings;
 
-//Ros objects
+//Ros publishers
 ros::Publisher pointCloudPub;
+image_transport::Publisher newImagePub;
+
+//Ros subscribers
 ros::Subscriber imageSub;
 ros::Subscriber cameraInfoSub;
+
+
+//Camera model
 image_geometry::PinholeCameraModel cameraModel;
 
 
@@ -112,6 +118,7 @@ void depthCb(const sensor_msgs::ImageConstPtr& depth_msg)
 
 
 	pointCloudPub.publish (cloud_msg);
+	newImagePub.publish(cv_ptr->toImageMsg());
 }
 
 void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg) 
@@ -148,6 +155,7 @@ int main(int argc, char **argv)
 	 * NodeHandle destructed will close down the node.
 	 */
 	ros::NodeHandle nh;
+	image_transport::ImageTransport it(nh);
 
 	/**
 	 * The advertise() function is how you tell ROS that you want to
@@ -169,6 +177,7 @@ int main(int argc, char **argv)
 	// camera_info_pub = n.advertise<sensor_msgs::CameraInfo>("camera_info", 1);
 	// image_pub = n.advertise<sensor_msgs::Image>("image_rect", 1);
 	pointCloudPub = nh.advertise<PointCloud>("/points", 1);
+	newImagePub   = it.advertise("/newImage", 1);
 	imageSub      = nh.subscribe<sensor_msgs::Image>("camera/depth/image_raw", 1, imageCallback);
 	cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo>("camera/depth/camera_info", 1, cameraInfoCallback);
 
