@@ -26,27 +26,18 @@ ros::Publisher point_cloud_pub_;
 
 class PointCloudXyz {
 private: 
-	ros::NodeHandle nh_;
-	image_transport::ImageTransport it_;
-	image_transport::CameraSubscriber image_sub_;
+	ros::Publisher pointCloudPub;
+	image_transport::Publisher newImagePub;
 
-	image_geometry::PinholeCameraModel model_;
+	ros::Subscriber imageSub;
+	ros::Subscriber cameraInfoSub;
+
+	image_geometry::PinholeCameraModel cameraModel;
 	
 public:
-	PointCloudXyz() :
-		it_(nh_), 
-		// point_cloud_pub_(nh_.advertise<PointCloud>("points", 1)),
-		image_sub_(it_.subscribeCamera("camera/depth/image", 1, &PointCloudXyz::depthCb, this))
+	PointCloudXyz()
 	{
-
-		point_cloud_pub_ = nh_.advertise<PointCloud>("points", 1);
-		std::cout << this << " " << &point_cloud_pub_ << std::endl;
-
-		// image_transport::TransportHints hints("raw", ros::TransportHints(), nh_);
-		//image_sub_ = it_.subscribeCamera("camera/depth/image", 1, &PointCloudXyz::depthCb, this);
-
 		cv::namedWindow("Depth Image");
-		std::cout << this << " " << &point_cloud_pub_ << std::endl;
 	}
 
 	~PointCloudXyz()
@@ -54,19 +45,31 @@ public:
 		cv::destroyWindow("Depth Image");
 	}
 
-	void depthCb(const sensor_msgs::ImageConstPtr& depth_msg,
-		const sensor_msgs::CameraInfoConstPtr& info_msg);
+	void init();
 
+	void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg);
+	void cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr& infoMsg);
+	
 	// Handles float or uint16 depths
 	template<typename T>
 	void convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud_msg);
 };
 
-
-void PointCloudXyz::depthCb(const sensor_msgs::ImageConstPtr& depth_msg, 
-	const sensor_msgs::CameraInfoConstPtr& info_msg)
+void PointCloudXyz::init()
 {
-	//Convert to opencv
+	ros::NodeHandle nh;
+	image_transport::ImageTransport it(nh);
+
+	pointCloudPub = nh.advertise<PointCloud>("/points", 1);
+	newImagePub   = it.advertise("/newImage", 1);
+	imageSub      = nh.subscribe<sensor_msgs::Image, PointCloudXyz>("camera/depth/image", 1, &PointCloudXyz::imageCallback, this);
+	cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo, PointCloudXyz>("camera/depth/camera_info", 1, &PointCloudXyz::cameraInfoCallback, this);
+}
+
+
+void PointCloudXyz::imageCallback(const sensor_msgs::ImageConstPtr& depth_msg)
+{
+		//Convert to opencv
 	cv_bridge::CvImagePtr cv_ptr;
 	try
 	{
@@ -79,20 +82,17 @@ void PointCloudXyz::depthCb(const sensor_msgs::ImageConstPtr& depth_msg,
 	}
 	cv::imshow("Depth Image", cv_ptr->image);
 	cv::waitKey(3);
-    std::cout << this << " " << &point_cloud_pub_ << std::endl;
+		// std::cout << this << " " << &point_cloud_pub_ << std::endl;
 
 	PointCloud::Ptr cloud_msg(new PointCloud);
 	cloud_msg->header = depth_msg->header;
 	cloud_msg->height = depth_msg->height;
-	cloud_msg->width	= depth_msg->width;
+	cloud_msg->width  = depth_msg->width;
 	cloud_msg->is_dense = false;
 	cloud_msg->is_bigendian = false;
 
 	sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud_msg);
 	pcd_modifier.setPointCloud2FieldsByString(1, "xyz");
-
-	// Update camera model
-	model_.fromCameraInfo(info_msg);
 
 	if (depth_msg->encoding == enc::TYPE_16UC1)
 	{
@@ -109,20 +109,26 @@ void PointCloudXyz::depthCb(const sensor_msgs::ImageConstPtr& depth_msg,
 	}
 
 
-	point_cloud_pub_.publish (cloud_msg);
+	pointCloudPub.publish (cloud_msg);
+	newImagePub.publish(depth_msg);
+}
+
+void PointCloudXyz::cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr& infoMsg) 
+{
+	cameraModel.fromCameraInfo(infoMsg);
 }
 
 template<typename T>
 void PointCloudXyz::convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud_msg)
 {
 	// Use correct principal point from calibration
-	float center_x = model_.cx();
-	float center_y = model_.cy();
+	float center_x = cameraModel.cx();
+	float center_y = cameraModel.cy();
 
 	// Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
 	double unit_scaling = DepthTraits<T>::toMeters( T(1) );
-	float constant_x = unit_scaling / model_.fx();
-	float constant_y = unit_scaling / model_.fy();
+	float constant_x = unit_scaling / cameraModel.fx();
+	float constant_y = unit_scaling / cameraModel.fy();
 	float bad_point = std::numeric_limits<float>::quiet_NaN();
 
 	sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud_msg, "x");
@@ -198,7 +204,8 @@ int main(int argc, char **argv)
 	// ros::Subscriber camera_info_sub = n.subscribe("camera/depth/camera_info", 1, cameraCallback)
 ;	// ros::Subscriber image_sub = n.subscribe("camera/depth/image", 1, imageCallback);
 
-	 PointCloudXyz();
+	 PointCloudXyz pt;
+	 pt.init();
 
 	ros::spin();
 

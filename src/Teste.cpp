@@ -75,8 +75,9 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud
 	}
 }
 
-void depthCb(const sensor_msgs::ImageConstPtr& depth_msg)
+void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg)
 {
+	std::cout << "imageCallback" <<std::endl;
 	//Convert to opencv
 	cv_bridge::CvImagePtr cv_ptr;
 	try
@@ -118,13 +119,7 @@ void depthCb(const sensor_msgs::ImageConstPtr& depth_msg)
 
 
 	pointCloudPub.publish (cloud_msg);
-	newImagePub.publish(cv_ptr->toImageMsg());
-}
-
-void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg) 
-{
-	std::cout << "imageCallback" <<std::endl;
-	depthCb(depth_msg);
+	newImagePub.publish(depth_msg);
 }
 
 void cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr& infoMsg) 
@@ -178,7 +173,7 @@ int main(int argc, char **argv)
 	// image_pub = n.advertise<sensor_msgs::Image>("image_rect", 1);
 	pointCloudPub = nh.advertise<PointCloud>("/points", 1);
 	newImagePub   = it.advertise("/newImage", 1);
-	imageSub      = nh.subscribe<sensor_msgs::Image>("camera/depth/image_raw", 1, imageCallback);
+	imageSub      = nh.subscribe<sensor_msgs::Image>("camera/depth/image", 1, imageCallback);
 	cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo>("camera/depth/camera_info", 1, cameraInfoCallback);
 
 	// ros::Subscriber camera_info_sub = n.subscribe("camera/depth/camera_info", 1, cameraCallback)
