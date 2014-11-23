@@ -24,6 +24,7 @@ typedef sensor_msgs::PointCloud2 PointCloud;
 namespace enc = sensor_msgs::image_encodings;
 ros::Publisher point_cloud_pub_;
 
+
 class PointCloudXyz {
 private: 
 	ros::Publisher pointCloudPub;
@@ -33,6 +34,8 @@ private:
 	ros::Subscriber cameraInfoSub;
 
 	image_geometry::PinholeCameraModel cameraModel;
+
+	boost::function <void(boost::shared_ptr<cv_bridge::CvImage>)> imageProcessingCallback;
 	
 public:
 	PointCloudXyz()
@@ -45,7 +48,7 @@ public:
 		cv::destroyWindow("Depth Image");
 	}
 
-	void init();
+	void init(boost::function <void(boost::shared_ptr<cv_bridge::CvImage>)> callback);
 
 	void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg);
 	void cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr& infoMsg);
@@ -55,7 +58,7 @@ public:
 	void convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud_msg);
 };
 
-void PointCloudXyz::init()
+void PointCloudXyz::init(boost::function <void(boost::shared_ptr<cv_bridge::CvImage>)>  callback)
 {
 	ros::NodeHandle nh;
 	image_transport::ImageTransport it(nh);
@@ -64,6 +67,8 @@ void PointCloudXyz::init()
 	newImagePub   = it.advertise("/newImage", 1);
 	imageSub      = nh.subscribe<sensor_msgs::Image, PointCloudXyz>("camera/depth/image", 1, &PointCloudXyz::imageCallback, this);
 	cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo, PointCloudXyz>("camera/depth/camera_info", 1, &PointCloudXyz::cameraInfoCallback, this);
+
+	imageProcessingCallback = callback;
 }
 
 
@@ -83,6 +88,8 @@ void PointCloudXyz::imageCallback(const sensor_msgs::ImageConstPtr& depth_msg)
 	cv::imshow("Depth Image", cv_ptr->image);
 	cv::waitKey(3);
 		// std::cout << this << " " << &point_cloud_pub_ << std::endl;
+
+	imageProcessingCallback(cv_ptr);
 
 	PointCloud::Ptr cloud_msg(new PointCloud);
 	cloud_msg->header = depth_msg->header;
@@ -157,6 +164,12 @@ void PointCloudXyz::convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCl
 	}
 }
 
+
+void imageProcessing (boost::shared_ptr<cv_bridge::CvImage> cv_ptr)
+{
+	std::cout << "Image processing" << std::endl;
+}
+
 /**
  * This tutorial demonstrates simple sending of messages over the ROS system.
  */
@@ -202,10 +215,10 @@ int main(int argc, char **argv)
 	// image_pub = n.advertise<sensor_msgs::Image>("image_rect", 1);
 
 	// ros::Subscriber camera_info_sub = n.subscribe("camera/depth/camera_info", 1, cameraCallback)
-;	// ros::Subscriber image_sub = n.subscribe("camera/depth/image", 1, imageCallback);
+	// ros::Subscriber image_sub = n.subscribe("camera/depth/image", 1, imageCallback);
 
 	 PointCloudXyz pt;
-	 pt.init();
+	 pt.init(boost::bind(imageProcessing, _1));
 
 	ros::spin();
 
