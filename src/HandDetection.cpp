@@ -48,6 +48,7 @@ public:
 		cv::destroyWindow("Depth Image");
 	}
 
+	void init(void (*callback)(boost::shared_ptr<cv_bridge::CvImage>));
 	void init(boost::function <void(boost::shared_ptr<cv_bridge::CvImage>)> callback);
 
 	void imageCallback(const sensor_msgs::ImageConstPtr& depth_msg);
@@ -57,6 +58,11 @@ public:
 	template<typename T>
 	void convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud_msg);
 };
+
+void PointCloudXyz::init(void (*callback)(boost::shared_ptr<cv_bridge::CvImage>))
+{
+	init(boost::bind(callback,_1));	
+}
 
 void PointCloudXyz::init(boost::function <void(boost::shared_ptr<cv_bridge::CvImage>)>  callback)
 {
@@ -103,11 +109,11 @@ void PointCloudXyz::imageCallback(const sensor_msgs::ImageConstPtr& depth_msg)
 
 	if (depth_msg->encoding == enc::TYPE_16UC1)
 	{
-		convert<uint16_t>(depth_msg, cloud_msg);
+		convert<uint16_t>(cv_ptr->toImageMsg(), cloud_msg);
 	}
 	else if (depth_msg->encoding == enc::TYPE_32FC1)
 	{
-		convert<float>(depth_msg, cloud_msg);
+		convert<float>(cv_ptr->toImageMsg(), cloud_msg);
 	}
 	else
 	{
@@ -117,7 +123,7 @@ void PointCloudXyz::imageCallback(const sensor_msgs::ImageConstPtr& depth_msg)
 
 
 	pointCloudPub.publish (cloud_msg);
-	newImagePub.publish(depth_msg);
+	newImagePub.publish(cv_ptr->toImageMsg());
 }
 
 void PointCloudXyz::cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr& infoMsg) 
@@ -164,10 +170,24 @@ void PointCloudXyz::convert(const sensor_msgs::ImageConstPtr& depth_msg, PointCl
 	}
 }
 
+float global_min_threshold = 0.5;
+int min_threshold = 650;
 
-void imageProcessing (boost::shared_ptr<cv_bridge::CvImage> cv_ptr)
+void update_global_min_threshold(int,void*) {
+  global_min_threshold = float(min_threshold) / 1000.0f;
+}
+
+void imageProcessing (boost::shared_ptr<cv_bridge::CvImage> & cvPtr)
 {
-	std::cout << "Image processing" << std::endl;
+	// threshold image 
+    cv::Mat thresholdImage;
+	cv::threshold(cvPtr->image,thresholdImage,global_min_threshold,1.0f,cv::THRESH_TOZERO_INV);
+	cv::imshow("Threshold Image",thresholdImage);
+    cv::createTrackbar("Min Threshold:","Threshold Image",&min_threshold,1000,update_global_min_threshold);
+    update_global_min_threshold(global_min_threshold,0);
+
+    cvPtr->image = thresholdImage;
+
 }
 
 /**
@@ -218,7 +238,7 @@ int main(int argc, char **argv)
 	// ros::Subscriber image_sub = n.subscribe("camera/depth/image", 1, imageCallback);
 
 	 PointCloudXyz pt;
-	 pt.init(boost::bind(imageProcessing, _1));
+	 pt.init(imageProcessing);
 
 	ros::spin();
 
